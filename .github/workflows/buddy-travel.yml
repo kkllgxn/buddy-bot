@@ -16,9 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run buddy travel daily task
-        run: node daily.js
+        run: |
+          if [ -f daily.js ]; then
+            node daily.js
+          elif [ -f buddy-travel-bot/daily.js ]; then
+            node buddy-travel-bot/daily.js
+          else
+            echo "::error::没有找到 daily.js —— 请确认它已上传到仓库（根目录或 buddy-travel-bot/ 目录下均可）"
+            exit 1
+          fi
         env:
           BUDDY_TOKEN: ${{ secrets.BUDDY_TOKEN }}
