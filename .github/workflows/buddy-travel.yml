@@ -23,8 +23,27 @@ jobs:
 
       - name: Run buddy travel daily task
         run: |
-          node daily.js 2>&1 | tee result.log
-          exit ${PIPESTATUS[0]}   # 保证脚本的退出码不被 tee 吞掉
+          case "$GITHUB_EVENT_NAME" in
+            schedule) T="定时任务" ;;
+            workflow_dispatch) T="手动" ;;
+            *) T="代码更新" ;;
+          esac
+          STAMP="$(date '+%Y-%m-%d %H:%M:%S')（$T）"
+          node daily.js 2>&1 | tee run_current.log
+          PIPE=${PIPESTATUS[0]}   # 保证脚本的退出码不被 tee 吞掉
+          # 组装 result.log：本次记录 + 之前最多 4 次 = 滚动保留最近 5 次
+          RUN_HEADER="================ 运行时间: ${STAMP} ================" node -e '
+            const fs = require("fs");
+            const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
+            const cur = process.env.RUN_HEADER + "\n" + read("run_current.log").replace(/\n*$/, "\n");
+            const chunks = read("result.log").split(/(================ 运行时间:[^\n]*================\n)/);
+            const entries = [];
+            for (let i = 1; i < chunks.length; i += 2) entries.push(chunks[i] + chunks[i + 1].replace(/\n+$/, "\n"));
+            const kept = entries.slice(-4);
+            const out = [cur, ...kept].join("\n");
+            fs.writeFileSync("result.log", out.endsWith("\n") ? out : out + "\n");
+          '
+          exit $PIPE
         env:
           BUDDY_TOKEN: ${{ secrets.BUDDY_TOKEN }}
 
@@ -52,4 +71,4 @@ jobs:
           to: ${{ secrets.MAIL_USER }}
           from: ${{ secrets.MAIL_USER }}
           subject: "喵喵旅行每日任务${{ github.event_name == 'schedule' && '（定时任务）' || github.event_name == 'workflow_dispatch' && '（手动）' || '（代码更新）' }} - ${{ job.status == 'success' && '✅ 成功' || '❌ 失败' }}"
-          body: file://result.log
+          body: file://run_current.log
