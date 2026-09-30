@@ -1,11 +1,14 @@
 # 喵喵旅行每日任务（GitHub Actions 云端定时，不依赖本地电脑开机）
 # 时区说明：GitHub cron 用的是 UTC，北京时间 = UTC + 8
+# 注意：GitHub 的 schedule 在整点/半点是拥堵高峰，常被延迟甚至跳过，
+#       因此这里刻意避开 :00 / :30，错峰到非高峰分钟。
 name: Buddy Travel Daily
 
 on:
   schedule:
-    - cron: "30 1 * * *"   # 北京时间 每天 09:30 —— 签到 + 领礼物 + 派出行
-    - cron: "30 11 * * *"  # 北京时间 每天 19:30 —— 晚间兜底领礼物
+    - cron: "37 1 * * *"    # 北京时间 每天 09:37 —— 签到 + 领礼物 + 派出行
+    - cron: "37 11 * * *"   # 北京时间 每天 19:37 —— 晚间兜底领礼物
+    - cron: "16 12 * * *"   # 北京时间 每天 20:16 —— 新增晚间任务
   workflow_dispatch: {}    # 允许在 Actions 页面手动点「Run workflow」
   push: {}                 # 任何文件更新都会触发一次运行（WorkBuddy 也可借此远程触发）
 
