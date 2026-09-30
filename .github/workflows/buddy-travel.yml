@@ -6,10 +6,11 @@ on:
   schedule:
     - cron: "30 1 * * *"   # 北京时间 每天 09:30 —— 签到 + 领礼物 + 派出行
     - cron: "30 11 * * *"  # 北京时间 每天 19:30 —— 晚间兜底领礼物
-  workflow_dispatch: {}    # 允许在 Actions 页面手动点「Run workflow」测试
+  workflow_dispatch: {}    # 允许在 Actions 页面手动点「Run workflow」
+  push: {}                 # 任何文件更新都会触发一次运行（WorkBuddy 也可借此远程触发）
 
 permissions:
-  contents: read
+  contents: write          # 运行结束后要把 result.log 提交回仓库
 
 jobs:
   run:
@@ -27,9 +28,20 @@ jobs:
         env:
           BUDDY_TOKEN: ${{ secrets.BUDDY_TOKEN }}
 
+      # 把运行日志提交回仓库（GITHUB_TOKEN 的提交不会再次触发工作流，无循环风险）
+      - name: Commit run log
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add result.log
+          git commit -m "run log $(date '+%m-%d %H:%M')" || echo "no changes"
+          git push || echo "push skipped"
+
       # 成功/失败都发邮件到你的邮箱（需配置 MAIL_USER / MAIL_PASS 两个 Secret）
       - name: Email run result
         if: always()
+        continue-on-error: true   # 邮件未配置/发送失败不影响任务结果
         uses: dawidd6/action-send-mail@v4
         with:
           server_address: smtp.qq.com        # 163 邮箱改为 smtp.163.com
