@@ -1,9 +1,12 @@
 /**
- * 喵喵旅行 · 每日任务脚本（先领礼物 → 再派出行，一次跑完）
+ * 成长中心每日任务脚本（先签到 → 再领礼物 → 最后派出行，一次跑完）
  *
  * 用法：
- *   node daily.js               完整流程（先领后派，可放心重复运行）
+ *   node daily.js               完整流程（可放心重复运行）
  *   node daily.js --claim-only  只领礼物，不派出行
+ *
+ * 登录态：优先读环境变量 BUDDY_TOKEN（GitHub Actions 云端用），
+ *         没有则读本目录 token.json（本地用，由 login.js 生成）。
  *
  * 四态识别（对应成长中心页面的四种状态）：
  *   1. 旅行中（有倒计时）        → 跳过，不重复派
@@ -67,18 +70,23 @@ function loadToken() {
 }
 
 // ---------- 接口层 ----------
+// 签到接口的 referer 是 plans-usage 页，喵喵接口是 growth-center 页（与扩展实现一致）
+function buildHeaders(token, refererPath) {
+  return {
+    "content-type": "application/json",
+    accept: "application/json, text/plain, */*",
+    authorization: `Bearer ${token}`,
+    "user-agent": UA,
+    origin: API_BASE,
+    referer: `${API_BASE}${refererPath}`,
+    "x-client-platform": "web",
+  };
+}
+
 async function callApi(token, sub, method = "GET", body) {
   const resp = await fetch(`${API_BASE}${BUDDY_PATH}/${sub}`, {
     method,
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/plain, */*",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      origin: API_BASE,
-      referer: `${API_BASE}/profile/growth-center`,
-      "x-client-platform": "web",
-    },
+    headers: buildHeaders(token, "/profile/growth-center"),
     body: body !== undefined ? body : undefined,
   });
 
@@ -96,6 +104,51 @@ async function callApi(token, sub, method = "GET", body) {
     throw new Error(`HTTP_${resp.status}`);
   }
   return json;
+}
+
+// ---------- 每日签到（参考扩展 doCheckin 实现） ----------
+// 网关对「今日已签到」返回 HTTP 400 + code=10001（幂等），视为已签到，不算失败
+async function checkinOnce(token) {
+  const resp = await fetch(`${API_BASE}/billing/meter/daily-checkin`, {
+    method: "POST",
+    headers: buildHeaders(token, "/profile/plans-usage"),
+    body: "{}",
+  });
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error("AUTH_EXPIRED");
+  }
+  let json = {};
+  try {
+    json = await resp.json();
+  } catch {
+    /* 响应体非 JSON 时按空对象处理 */
+  }
+  if (json?.code === 10001) return { already: true };
+  if (resp.ok && json?.code === 0) return { ok: true, credit: json?.data?.credit };
+  if (json?.code !== undefined) return { error: json?.msg ?? `code=${json?.code}` };
+  throw new Error(`HTTP_${resp.status}`);
+}
+
+async function doCheckin(token) {
+  for (let attempt = 1; attempt <= CLAIM_RETRY_MAX; attempt++) {
+    try {
+      const r = await checkinOnce(token);
+      if (r.already) {
+        log("✅ 签到：今日已签到过");
+        return true;
+      }
+      if (r.ok) {
+        log(r.credit > 0 ? `✅ 签到：成功，+${r.credit} 积分` : "✅ 签到：成功");
+        return true;
+      }
+      throw new Error(r.error || "未知错误");
+    } catch (e) {
+      log(`⚠️ 签到：第 ${attempt}/${CLAIM_RETRY_MAX} 次失败：${e.message}`);
+      if (attempt < CLAIM_RETRY_MAX) await sleep(RETRY_DELAY_MS);
+    }
+  }
+  log("❌ 签到：重试 3 次仍失败，本次跳过（下次运行会再试）");
+  return false;
 }
 
 /** 查询喵喵状态（四态识别的数据来源） */
@@ -208,6 +261,17 @@ async function doDepart(token) {
 async function main() {
   log("====== 喵喵旅行每日任务开始 ======");
   const token = loadToken();
+
+  // 0) 每日签到（与喵喵任务相互独立；签到失败不阻塞后面的领礼物/派出行）
+  try {
+    await doCheckin(token);
+  } catch (e) {
+    if (e.message === "AUTH_EXPIRED") {
+      log("❌ 登录态已过期。请在本地重新运行一次：node login.js，然后更新 GitHub 仓库的 BUDDY_TOKEN 密钥");
+      process.exit(2);
+    }
+    log(`⚠️ 签到环节异常，继续执行喵喵任务：${e.message}`);
+  }
 
   // 1) 先看状态：四态识别
   let st;
