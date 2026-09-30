@@ -51,5 +51,5 @@ jobs:
           password: ${{ secrets.MAIL_PASS }} # 是 SMTP 授权码，不是邮箱登录密码
           to: ${{ secrets.MAIL_USER }}
           from: ${{ secrets.MAIL_USER }}
-          subject: "喵喵旅行每日任务 - ${{ job.status == 'success' && '✅ 成功' || '❌ 失败' }}"
+          subject: "喵喵旅行每日任务${{ github.event_name == 'schedule' && '（定时任务）' || github.event_name == 'workflow_dispatch' && '（手动）' || '（代码更新）' }} - ${{ job.status == 'success' && '✅ 成功' || '❌ 失败' }}"
           body: file://result.log
