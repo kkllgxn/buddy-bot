@@ -15,18 +15,12 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TZ: Asia/Shanghai   # 让日志时间戳显示北京时间（定时触发时间本就按北京时间换算，不受影响）
     steps:
       - uses: actions/checkout@v5
 
       - name: Run buddy travel daily task
-        run: |
-          if [ -f daily.js ]; then
-            node daily.js
-          elif [ -f buddy-travel-bot/daily.js ]; then
-            node buddy-travel-bot/daily.js
-          else
-            echo "::error::没有找到 daily.js —— 请确认它已上传到仓库（根目录或 buddy-travel-bot/ 目录下均可）"
-            exit 1
-          fi
+        run: node daily.js
         env:
           BUDDY_TOKEN: ${{ secrets.BUDDY_TOKEN }}
