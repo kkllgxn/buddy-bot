@@ -60,37 +60,6 @@ jobs:
           git commit -m "run log $(date '+%m-%d %H:%M')" || echo "no changes"
           git push || echo "push skipped"
 
-      # 邮件发送诊断：显式发一封测试邮件，把 SMTP 的真实报错暴露出来
-      # （原来的 Email 步骤因为 continue-on-error 会静默吞掉失败，无法定位问题）
-      - name: Diagnose email (verbose)
-        if: always()
-        continue-on-error: true
-        env:
-          MAIL_USER: ${{ secrets.MAIL_USER }}
-          MAIL_PASS: ${{ secrets.MAIL_PASS }}
-        run: |
-          echo "MAIL_USER 是否为空: $([ -z "$MAIL_USER" ] && echo '为空(未配置)' || echo '已配置')"
-          echo "MAIL_PASS 是否为空: $([ -z "$MAIL_PASS" ] && echo '为空(未配置)' || echo '已配置')"
-          echo "MAIL_USER 长度: ${#MAIL_USER}"
-          echo "MAIL_PASS 长度: ${#MAIL_PASS}  (QQ邮箱授权码应为 16 位)"
-          npm install nodemailer --no-save --silent
-          node -e '
-            const nodemailer = require("nodemailer");
-            const t = nodemailer.createTransport({
-              host: "smtp.qq.com", port: 465, secure: true,
-              auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
-              logger: true, debug: true
-            });
-            t.verify().then(() => {
-              console.log("✅ SMTP 认证通过，账号密码/授权码正确");
-              return t.sendMail({
-                from: process.env.MAIL_USER, to: process.env.MAIL_USER,
-                subject: "[诊断] 喵喵旅行邮件通道测试", text: "如果你收到这封邮件，说明 SMTP 配置正常。"
-              });
-            }).then(i => console.log("✅ 测试邮件已发送:", i.messageId))
-              .catch(e => { console.error("❌ 发送失败:", e.message); console.error(e.code || ""); process.exit(1); });
-          '
-
       # 成功/失败都发邮件到你的邮箱（需配置 MAIL_USER / MAIL_PASS 两个 Secret）
       - name: Email run result
         if: always()
